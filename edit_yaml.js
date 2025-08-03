@@ -16,7 +16,10 @@ const parced_midi = midi.parse(midi_data);
 // midi解析
 function create_notes_list(parced_midi, default_tempo) {
 	const midi_all_notes = {};
+
+	// トラックごとの解析
 	for (var i = 0; i < parced_midi.track.length; i++) {
+		let track_name = String(i);
 		let absolute_time_tick = 0;
 		let tempo_mis = default_tempo ? default_tempo : 454545; // デフォルトのテンポ
 		const tick_per_beat = parced_midi.timeDivision;
@@ -28,12 +31,17 @@ function create_notes_list(parced_midi, default_tempo) {
 		parced_midi.track[i].event.forEach(event => {
 			absolute_time_tick += event.deltaTime;
 
+			// トラック名の再設定
+			if (event.type === 255 && event.metaType === 3) {
+				track_name = String(event.data);
+			}
+
 			// テンポの再設定
 			if (event.type === 255 && event.metaType === 81) {
 				tempo_mis = event.data;
 				const tempo_ms = event.data / tick_per_beat;
 				tempo_changes.push(tempo_ms);
-				console.log(tempo_changes);
+				// console.log(tempo_changes);
 			}
 
 			// ノートオンの処理
@@ -100,7 +108,7 @@ function create_notes_list(parced_midi, default_tempo) {
 		
 		// display_notes(notes, tempo_mis, tick_per_beat);
 
-		midi_all_notes[i] = notes;
+		midi_all_notes[track_name] = notes;
 	}
 	console.log(midi_all_notes);
 }
