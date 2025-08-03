@@ -108,25 +108,44 @@ function create_notes_list(parced_midi, default_tempo) {
 		
 		// display_notes(notes, tempo_mis, tick_per_beat);
 
-		midi_all_notes[track_name] = notes;
+		midi_all_notes[track_name] = {
+			notes: notes,
+			tempo_mis: tempo_mis,
+			tick_per_beat: tick_per_beat // midiファイルごとに決まっている値だが、扱いやすさのためにトラックごとに格納する
+		};
 	}
-	console.log(midi_all_notes);
+	return midi_all_notes;
 }
 
 
 // ノートの相対座標を返す
-function display_notes(notes_list, tempo_mis, tick_per_beat) {
-	const ms_per_tick = Math.round((tempo_mis / 1000) / tick_per_beat);
-	const display_notes_list = [];
+function coordinate_notes(list) {
+	console.log(list);
+	const all_coordinates_notes = {};
+	// キー(トラック名)を配列化
+	Object.keys(list).forEach(track => {
+		const track_coordinate_notes = [];
+		// console.log(list[track]);
 
-	notes_list.forEach(note => {
-		const pich = note.noteNumber % 12; // オクターブで循環させる
-		const start_time_tick = Math.round(note.startTimeMs / ms_per_tick);
-		const duraion_tick = Math.round(note.durationMs / ms_per_tick);
+		// トラックごとの処理
+		list[track].notes.forEach(note => {
+			const ms_per_tick = Math.round((list[track].tempo_mis / 1000) / list[track].tick_per_beat);
+			// console.log(tick_per_beat);
 
-		display_notes_list.push([[start_time_tick, pich], duraion_tick]);
+			// console.log(note);
+
+			const pich = note.noteNumber % 12; // オクターブで循環させる
+			const start_time_tick = Math.round(note.startTimeMs / ms_per_tick);
+			const duraion_tick = Math.round(note.durationMs / ms_per_tick);
+
+
+			console.log([[start_time_tick, pich], duraion_tick])
+			track_coordinate_notes.push([[start_time_tick, pich], duraion_tick]);
+		});
+		all_coordinates_notes[track] = track_coordinate_notes;
+		
 	});
-	console.log(display_notes_list);
+	return all_coordinates_notes;
 }
 
 // TUIの起動
@@ -280,5 +299,5 @@ function create_yaml() {
 }
 
 // create_yaml();
-create_notes_list(parced_midi);
+console.log(coordinate_notes(create_notes_list(parced_midi)));
 // setup_tui();
