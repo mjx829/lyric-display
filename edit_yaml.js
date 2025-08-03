@@ -95,7 +95,34 @@ function display_notes() {
 	
 }
 
+const test_event_trigger = [1, 15, 29, 33, 37, 47, 56, 70];
+const test_lyrics = ["カンデラに差し掛かる突き当り。", "物乞いに集る毒蛾。", "ここから、", "そこから。", "動き始めたのです。", "あなたは在すか。", "この狼藉跋扈の褻に。", "わたしは見ています。"]
+
 function create_yaml() {
 	const notes = create_notes_list(parced_midi, 2);
 	
+	const created_yaml = {
+		description: {
+			title: "BIN2",
+			artist: "無音。"
+		},
+		lyrics: []
+	}
+	for (var i = 0; i < test_event_trigger.length; i++) {
+		const line_lyric = {
+			lyric: test_lyrics[i],
+			has_newline: true
+		}
 
+		if(i === 0) {
+			line_lyric.time = notes[test_event_trigger[i]].startTimeMs;
+		} else {
+			line_lyric.time = notes[test_event_trigger[i]].startTimeMs - notes[test_event_trigger[i - 1]].startTimeMs;
+		}
+
+		created_yaml.lyrics.push(line_lyric);
+	}
+	console.log(yaml.dump(created_yaml));
+}
+
+create_yaml();

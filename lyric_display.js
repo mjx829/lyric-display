@@ -1,4 +1,5 @@
 const yaml = require("js-yaml");
+const fs = require("fs");
 const test_yaml = `
 description:
  title: BIN2
@@ -30,8 +31,9 @@ lyrics:
    has_newline: true
 `;
 
-const parced_jsob = yaml.load(test_yaml);
+// const parced_jsob = yaml.load(test_yaml);
 // console.log(parced_jsob);
+const test_file_path = "test_buin2.yaml";
 
 function display_lyrics(lyrics) {
 	// process.stdout.write('\x1Bc');
@@ -46,4 +48,11 @@ function display_lyrics(lyrics) {
 	}
 }
 
-display_lyrics(parced_jsob["lyrics"]);
+fs.readFile(test_file_path, "utf8", (err, data) => {
+	if (err) {
+		console.error("ファイルの読み込みに失敗しました。\n${err}");
+		return;
+	}
+	// console.log(data);
+	display_lyrics(yaml.load(data).lyrics);
+});
