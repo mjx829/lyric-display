@@ -1,4 +1,6 @@
 const fs = require("fs");
+const fsP = require("fs").promises;
+const util = require("util");
 const yaml = require("js-yaml");
 const midi = require("midi-parser-js");
 const blessed = require("blessed");
@@ -6,17 +8,19 @@ const blessed = require("blessed");
 // midi解析
 function create_notes_list(parced_midi, default_tempo) {
 	const midi_all_notes = {};
+	const tempo_info = {};
+	tempo_info.tick_per_beat = parced_midi.timeDivision;
+	tempo_info.tempo_change = {
+		time: 0,
+		tempo: default_tempo ? default_tempo : 454545 // デフォルトのテンポ
+	}
 
 	// トラックごとの解析
 	for (var i = 0; i < parced_midi.track.length; i++) {
 		let track_name = String(i);
 		let absolute_time_tick = 0;
-		let tempo_mis = default_tempo ? default_tempo : 454545; // デフォルトのテンポ
-		let tempo_ms = tempo_mis / 1000;
-		const tick_per_beat = parced_midi.timeDivision;
 
 		const notes = [];
-		const tempo_changes = [];
 		const active_notes = new Map();
 
 		parced_midi.track[i].event.forEach(event => {
@@ -29,10 +33,10 @@ function create_notes_list(parced_midi, default_tempo) {
 
 			// テンポの再設定
 			if (event.type === 255 && event.metaType === 81) {
-				tempo_mis = event.data;
-				tempo_ms = tempo_mis / 1000;
-				tempo_changes.push(tempo_ms);
-				// console.log(tempo_changes);
+				tempo_info.tempo_change = {
+					time: absolute_time_tick,
+					tempo: event.data
+				}
 			}
 
 			// ノートオンの処理
@@ -42,16 +46,13 @@ function create_notes_list(parced_midi, default_tempo) {
 
 				// 重複したノートの除去
 				if (active_notes.has(note_number)) {
-					const start_time_ticks = active_notes.get(note_number);
-					const duration_ticks = absolute_time_tick - start_time_ticks;
+					const start_time_tick = active_notes.get(note_number);
+					const duration_tick = absolute_time_tick - start_time_tick;
 
-					const start_time_ms = (start_time_ticks / tick_per_beat) * tempo_ms;
-					const duration_ms = (duration_ticks / tick_per_beat) * tempo_ms;
-					
 					notes.push({
-						noteNumber: note_number,
-						startTimeMs: start_time_ms,
-						durationMs: duration_ms,
+						note_number: note_number,
+						start_time_tick: start_time_tick,
+						duration_tick: duration_tick,
 						status: "Note ended early"
 					});
 					active_notes.delete(note_number);
@@ -65,16 +66,13 @@ function create_notes_list(parced_midi, default_tempo) {
 
 				// 該当のノートオンに対してのみ処理
 				if (active_notes.has(note_number)) {
-					const start_time_ticks = active_notes.get(note_number);
-					const duration_ticks = absolute_time_tick - start_time_ticks;
-
-					const start_time_ms = (start_time_ticks / tick_per_beat) * tempo_ms;
-					const duration_ms = (duration_ticks / tick_per_beat) * tempo_ms;
+					const start_time_tick = active_notes.get(note_number);
+					const duration_tick = absolute_time_tick - start_time_tick;
 
 					notes.push({
-						noteNumber: note_number,
-						startTimeMs: start_time_ms,
-						durationMs: duration_ms
+						note_number: note_number,
+						start_time_tick: start_time_tick,
+						duration_tick: duration_tick
 					});
 					active_notes.delete(note_number);
 				}
@@ -82,15 +80,13 @@ function create_notes_list(parced_midi, default_tempo) {
 		});
 
 		// トラックの終了後もオンになっているノートをオフとして記録
-		active_notes.forEach((start_time_ticks, note_number) => {
-			const duration_ticks = absolute_time_tick - start_time_ticks;
-			const start_time_ms = (start_time_ticks / tick_per_beat) * tempo_ms;
-			const duration_ms = (duration_ticks / tick_per_beat) * tempo_ms;
+		active_notes.forEach((start_time_tick, note_number) => {
+			const duration_tick = absolute_time_tick - start_time_tick;
 
 			notes.push({
-				noteNumber: note_number,
-				startTimeMs: start_time_ms,
-				durationMs: duration_ms,
+				note_number: note_number,
+				start_time_tick: start_time_tick,
+				duration_tick: duration_tick,
 				status: "Unfinished note at track end"
 			});
 		});
@@ -99,47 +95,31 @@ function create_notes_list(parced_midi, default_tempo) {
 		
 		// display_notes(notes, tempo_mis, tick_per_beat);
 
-		midi_all_notes[track_name] = {
-			notes: notes,
-			tempo_ms: tempo_ms,
-			tick_per_beat: tick_per_beat // midiファイルごとに決まっている値だが、扱いやすさのためにトラックごとに格納する
-		};
+		midi_all_notes[track_name] = notes; 
 	}
-	return midi_all_notes;
+	return [midi_all_notes, tempo_info];
 }
 
 
 // ノートの相対座標を返す
 function coordinate_notes(list) {
 	// console.log(list);
+	
 	const all_coordinates_notes = {};
+	
 	// キー(トラック名)を配列化
 	Object.keys(list).forEach(track => {
 		const track_coordinate_notes = [];
 		// console.log(list[track]);
 
 		// トラックごとの処理
-		list[track].notes.forEach(note => {
-			const ms_per_tick = Math.round(list[track].tempo_ms / list[track].tick_per_beat);
-			// console.log(tick_per_beat);
-			// console.log(note);
+		list[track].forEach(note => {
+			const pich = note.note_number % 12; // オクターブで循環させる
 
-			const pich = note.noteNumber % 12; // オクターブで循環させる
-			const start_time_tick = Math.round(note.startTimeMs / ms_per_tick);
-			const duraion_tick = Math.round(note.durationMs / ms_per_tick);
-
-			// console.log([[start_time_tick, pich], duraion_tick])
-			track_coordinate_notes.push([[start_time_tick, pich], duraion_tick]);
+			track_coordinate_notes.push([[note.start_time_tick, pich], note.duration_tick]);
 		});
 
-		// console.log(track_coordinate_notes);
-
-		all_coordinates_notes[track] = {
-			notes: track_coordinate_notes,
-			tempo_ms: list[track].tempo_ms,
-			tick_per_beat: list[track].tick_per_beat
-		};
-		
+		all_coordinates_notes[track] = track_coordinate_notes;
 	});
 	return all_coordinates_notes;
 }
@@ -195,6 +175,8 @@ function setup_tui() {
 		width: "100%",
 		height: "60%",
 		content: "midi_display",
+		scrollable: true,
+		warp: false,
 		border: {type: "line"},
 		style: {fg: "#FFF", bg: "#000", border: {fg: "#FFF", bg: "#000"}}
 	});
@@ -250,7 +232,6 @@ function setup_tui() {
 		height: "100%-3",
 		label: "track_list",
 		items: [],
-		mouse: true,
 		keys: true,
 		vi: true,
 		style: {
@@ -294,6 +275,71 @@ function make_prefix(screen, list_widget, original_items) {
 	screen.render();
 }
 
+// midi描画
+async function draw_midi(screen, midi_dis, notes_array, tempo_info) {
+    const notes = notes_array;
+    const tick_per_beat = tempo_info.tick_per_beat;
+	const NOTE_BEAT = 4; // 一つのグリッドの拍子
+
+	// console.dir(notes, {depth:null});
+    // console.log(tick_per_beat);
+    // console.log(midi_dis.width);
+
+    class midi_canvas {
+        constructor(width, height) {
+            this.width = width;
+            this.height = height;
+            this.grid = Array(height).fill().map(() => Array(width).fill(' '));    
+        }
+
+        setPixel(x, y, char) {
+            if (x >= 0 && x < this.width && y >= 0 && y < this.height) {
+                this.grid[y][x] = char;
+            }
+        }
+
+        render(widget) {
+            const content = this.grid.map(row => row.join("")).join("\n");
+            widget.setContent(content);
+        }
+    }
+
+    // キャンバスの作成
+    const canvas = new midi_canvas(midi_dis.width - 3, 12);
+    
+    // ノートの描画
+    let i = 0;
+    let current_x = 0;
+    
+    while (current_x < canvas.width && i < notes.length) {
+        const x = notes[i][0][0] / (tick_per_beat / NOTE_BEAT);
+        const y = Math.max(0, Math.min(11, 11 - notes[i][0][1]));
+        const dur = notes[i][1] / (tick_per_beat / NOTE_BEAT);
+        
+		// console.log(`${x}, ${y}, ${dur}`)
+
+        // duration部分に "-" を描画
+        for (let dur_i = 0; dur_i < dur && (x + dur_i) < midi_dis.width; dur_i++) {
+            canvas.setPixel(x + dur_i, y, "-");
+        }
+
+        // ノート開始位置に "=" を描画
+        if (x < midi_dis.width) {
+            canvas.setPixel(x, y, "=");
+        }
+        
+        current_x = x + dur;
+        i++;
+    }
+
+//	for (var j = 0; j < 12; j++) {
+//		canvas.setPixel(0, j, (j % 2) === 1 ? "A" : "B");
+//	}
+	
+	// await fsP.writeFile("output.txt", util.inspect(canvas.grid, {showHidden: false, depth: null, colors: false}), "utf-8");
+    canvas.render(midi_dis);
+    screen.render();
+}
 
 // 統率
 function setup(midi_file_path) {
@@ -301,10 +347,15 @@ function setup(midi_file_path) {
 	const base64_midi_data = raw_midi_data.toString("base64");
 	const parced_midi_data = midi.parse(base64_midi_data);
 
-	// jsオブジェクト
-	const notes_object = coordinate_notes(create_notes_list(parced_midi_data));
+	// console.dir(parced_midi_data, {depth: null});
 
-	// console.log(notes_object);
+	// jsオブジェクト
+	const midi_info_return = create_notes_list(parced_midi_data);
+
+	const notes_object = coordinate_notes(midi_info_return[0]);
+	const tempo_info = midi_info_return[1];
+
+	// console.dir(notes_object, {depth: null});
 
 	const blessed_objects = setup_tui();
 	let read_midi_file = midi_file_path ? midi_file_path : null;
@@ -322,15 +373,19 @@ function setup(midi_file_path) {
 	const original_track_names = Object.keys(notes_object); 
 	blessed_objects.track_list.setItems(original_track_names.map(item => `  ${item}`));
 	blessed_objects.screen.render();
-
 	make_prefix(blessed_objects.screen, blessed_objects.track_list, original_track_names);
 	
 	// トラックリストのイベントハンドラ
-	blessed_objects.track_list.key(["up", "down"], () => {
+	blessed_objects.track_list.key(["up", "down", "k", "j"], () => {
 		setTimeout(() => { 
 			make_prefix(blessed_objects.screen, blessed_objects.track_list, original_track_names);
 		}, 0);
 	});
+
+	// トラック選択後のイベントハンドラ
+	blessed_objects.track_list.on("select", (item, index) => {
+		draw_midi(blessed_objects.screen, blessed_objects.midi_dis, notes_object[item.content.slice(2)], tempo_info);
+	}); 
 }
 
 setup(process.argv[2]);
