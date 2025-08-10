@@ -406,6 +406,10 @@ function setup(midi_file_path) {
 
 	// リサイズのイベントハンドラ
 	blessed_objects.screen.on("resize", () => {
+		warning_resize();
+	});
+
+	function warning_resize() {	
 		if (blessed_objects.screen.width < 100 || blessed_objects.screen.height < 60) {
 			blessed_objects.screen.lockKeys = true;
 			blessed_objects.instant_window.setContent("\n{center}{bold}WARNING{/bold}{/center}\n\nWINDOW IS TOO SMALL!! Please resize window.\nNow, key input is disabled.");
@@ -415,7 +419,9 @@ function setup(midi_file_path) {
 			blessed_objects.instant_window.hide();
 		}
 		blessed_objects.screen.render();
-	});
+	}
+
+	warning_resize();
 }
 
 setup(process.argv[2]);
