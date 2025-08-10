@@ -114,7 +114,7 @@ function coordinate_notes(list) {
 
 		// トラックごとの処理
 		list[track].forEach(note => {
-			const pich = note.note_number % 12; // オクターブで循環させる
+			const pich = note.note_number % 24; // オクターブで循環させる
 
 			track_coordinate_notes.push([[note.start_time_tick, pich], note.duration_tick]);
 		});
@@ -128,7 +128,8 @@ function coordinate_notes(list) {
 function setup_tui() {
 	// スクリーンの作成
 	const screen = blessed.screen({
-		smartCSR:true
+		smartCSR: true,
+		ignoreLocked: ["C-c", "escape"]
 	});
 
 	// 終了時の処理
@@ -216,10 +217,24 @@ function setup_tui() {
 		style: {fg: "#FFF", bg: "#000", border: {fg: "#FFF", bg: "#000"}}
 	});
 
+	// 警告ウィンドウ
+	const instant_window = blessed.box({
+		top: "center",
+		left: "center",
+		width: 49,
+		height: 14,
+		tags: true,
+		content: "window",
+		border: {type: "line"},
+		style: {fg: "#FFF", bg: "#000", border: {fg: "#FFF", bg: "#000"}},
+		hidden: true
+	});
+
 	// 初期描画
 	screen.append(guide);
 	screen.append(sidebar);
 	screen.append(main_body);
+	screen.append(instant_window);
 
 	guide.setContent("Welcom. No file have been read. Press (C-f).");
 
@@ -255,7 +270,9 @@ function setup_tui() {
 		lyrics_list: lyrics_list,
 		lyrics_edit: lyrics_edit,
 
-		track_list: track_list
+		track_list: track_list,
+
+		instant_window: instant_window
 	}
 }
 
@@ -305,7 +322,7 @@ async function draw_midi(screen, midi_dis, notes_array, tempo_info) {
     }
 
     // キャンバスの作成
-    const canvas = new midi_canvas(midi_dis.width - 3, 12);
+    const canvas = new midi_canvas(midi_dis.width - 3, 24);
     
     // ノートの描画
     let i = 0;
@@ -313,7 +330,7 @@ async function draw_midi(screen, midi_dis, notes_array, tempo_info) {
     
     while (current_x < canvas.width && i < notes.length) {
         const x = notes[i][0][0] / (tick_per_beat / NOTE_BEAT);
-        const y = Math.max(0, Math.min(11, 11 - notes[i][0][1]));
+        const y = Math.max(0, Math.min(23, 23 - notes[i][0][1]));
         const dur = notes[i][1] / (tick_per_beat / NOTE_BEAT);
         
 		// console.log(`${x}, ${y}, ${dur}`)
@@ -385,7 +402,20 @@ function setup(midi_file_path) {
 	// トラック選択後のイベントハンドラ
 	blessed_objects.track_list.on("select", (item, index) => {
 		draw_midi(blessed_objects.screen, blessed_objects.midi_dis, notes_object[item.content.slice(2)], tempo_info);
-	}); 
+	});
+
+	// リサイズのイベントハンドラ
+	blessed_objects.screen.on("resize", () => {
+		if (blessed_objects.screen.width < 100 || blessed_objects.screen.height < 60) {
+			blessed_objects.screen.lockKeys = true;
+			blessed_objects.instant_window.setContent("\n{center}{bold}WARNING{/bold}{/center}\n\nWINDOW IS TOO SMALL!! Please resize window.\nNow, key input is disabled.");
+			blessed_objects.instant_window.show();
+		} else {
+			blessed_objects.screen.lockKeys = false;
+			blessed_objects.instant_window.hide();
+		}
+		blessed_objects.screen.render();
+	});
 }
 
 setup(process.argv[2]);
